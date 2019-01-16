@@ -8,7 +8,7 @@ import sqlite3
 from sqlite3 import Error
 
 class Array:
-    def __init__(self,name,mgmt,spa,spb):
+    def __init__(self,name,mgmt=None,spa=None,spb=None):
         self.name = name
         self.spa = spa
         self.spb = spb
@@ -26,6 +26,21 @@ class Array:
         finally:
             conn.close()
 
+    
+    @staticmethod
+    def get_arrayname(*data):
+        val = "No data available"
+        try:
+            conn = sqlite3.connect('arrayTest.db')
+            c = conn.cursor()
+            array_name = c.execute(f"SELECT name FROM arrays WHERE {data[0]}=?",(data[1],))
+            val = " ".join(a for a in array_name.fetchone()) 
+        except Error as e:
+            print(e)
+        finally:
+            conn.close()
+            return val.strip()
+
 
     @staticmethod
     def data_exists(*data):
@@ -33,7 +48,8 @@ class Array:
         try:
             conn = sqlite3.connect('arrayTest.db')
             c = conn.cursor()
-            if c.execute(f"SELECT * FROM arrays WHERE {data[0]}=?",(data[1],)):
+            output =  c.execute(f"SELECT * FROM arrays WHERE {data[0]}=?",(data[1],))
+            if len(output.fetchall())>0:
                 val = True
         except Error as e:
             print(e)
@@ -55,36 +71,95 @@ def quitApplication(master=root):
 
 def swarm(master=root,arrayname=None,spa=None,spb=None,mgmt=None):
     arrayname = entry.get()
-    spa = entry1.get()
-    flag = False
-    if arrayname or spa or  spb or mgmt: 
+    mgmt = entry1.get()
+    spa = entry2.get()
+    spb = entry3.get()
+    key = None
+    val = None
+    if arrayname or spa or  spb or mgmt:
+        dbflag = False 
+        array_name_flag = False
+        print(len(arrayname),len(mgmt),len(spa),len(spb))
         if len(arrayname)>0:
-            if  Array.data_exists('name',arrayname.upper()):
-                flag = True
-        with SSHClient() as ssh:
-            ssh.load_system_host_keys()
-            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect("10.244.192.215",22,username="root",password="c4dev!",sock=None)
-            command = f"swarm {arrayname.upper().strip()}"
-            ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command(command)
-            err = "".join(ssh_stderr.readlines())
-            if err:
-                op =  err
-            else:
-                op = "".join(ssh_stdout.readlines()).strip()
-            
-            print(err)
-            text.configure(state='normal')
-            text.delete(1.0,END)
-            text.insert(1.0,op)
-            text.configure(state='disabled')
+                array_name_flag = True
+                if  Array.data_exists('name',arrayname.upper().strip()):
+                    print("Inside name")
+                    key = 'name'
+                    val = arrayname.upper().strip()
+                    print(dbflag)
+                    dbflag = True
+                    print(dbflag)
+        elif len(mgmt)>0:
+                if  Array.data_exists('mgmt',mgmt.strip()):
+                    print("inside mgmt")
+                    key = 'mgmt'
+                    val = mgmt.strip()
+                    dbflag = True
+        elif len(spa)>0:
+                if  Array.data_exists('spa',spa.strip()):
+                    print("inside spa")
+                    key = 'spa'
+                    val = spa.strip()
+                    dbflag = True
+        elif len(spb)>0:
+                if  Array.data_exists('spb',spb.strip()):
+                    print("inside spb")
+                    key = 'spb'
+                    val = spb.strip()
+                    dbflag = True
+        else:
+                dbflag = False
+
+        print(array_name_flag,dbflag)
+        if array_name_flag or dbflag:     
+            with SSHClient() as ssh:
+                    ssh.load_system_host_keys()
+                    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                    ####Enter the host info and connect via ssh####
+                    ##i.essh.connect("xx.xxx.xxx.xxx",22,username="Admin",password="Password",sock=None)
+                    if dbflag and not array_name_flag:
+                        arrayname = Array.get_arrayname(key,val)
+                    command = f"swarm {arrayname.upper().strip()}"
+                    print(command)
+                    ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command(command)
+                    err = "".join(ssh_stderr.readlines())
+                    if err:
+                        op =  err
+                    else:
+                        op = "".join(ssh_stdout.readlines()).strip()
+                        print(dbflag)
+                        if  dbflag == False:
+                            print("Inserting data into db")
+                            name = op[op.find("Name:")+len("Name:")+1:op.find("Name:")+len("Name:")+9].strip()
+                            mgmt_ip = op[op.find("Mgmt IP:")+len("Mgmt IP:")+1:op.find("Mgmt IP:")+len("Mgmt IP:")+16].strip()
+                            spa_ip = op[op.find("Lab IP SPA:")+len("Lab IP SPA:")+1:op.find("Lab IP SPA:")+len("Lab IP SPA:")+16].strip()
+                            spb_ip = op[op.find("Lab IP SPB:")+len("Lab IP SPB:")+1:op.find("Lab IP SPB:")+len("Lab IP SPB:")+16].strip()
+                            data = Array(name,mgmt_ip,spa_ip,spb_ip)
+                            data.insert_arrays_info()
+                            print("name"+" "+name)
+                            print("mgmt"+" "+mgmt_ip)
+                            print("spa"+" "+spa_ip)
+                            print("spb"+" "+spb_ip)
                     
+                    print(err)
+                    text.configure(state='normal')
+                    text.delete(1.0,END)
+                    text.insert(1.0,op)
+                    text.configure(state='disabled') 
+        else:
+                text.configure(state='normal')
+                text.delete(1.0,END)
+                text.insert(1.0,"You have to enter the Array name !!!")
+                text.configure(state='disabled')                      
     else:
         text.configure(state='normal')
         text.delete(1.0,END)
         text.insert(1.0,"No information is provided regarding the array")
         text.configure(state='disabled')
-
+    entry.delete(0, 'end')
+    entry1.delete(0, 'end')
+    entry2.delete(0, 'end')
+    entry3.delete(0, 'end')
 
 
 
@@ -102,10 +177,20 @@ entry.pack()
 
 text = entry.get()
 
-spa = Label(root,text = "SPA IP Address -  ")
-spa.pack()
+mgmt = Label(root,text = "CS IP Address -  ")
+mgmt.pack()
 entry1 = Entry()
 entry1.pack()
+
+spa = Label(root,text = "SPA IP Address -  ")
+spa.pack()
+entry2 = Entry()
+entry2.pack()
+
+spb = Label(root,text = "SPB IP Address -  ")
+spb.pack()
+entry3 = Entry()
+entry3.pack()
 
 
 
